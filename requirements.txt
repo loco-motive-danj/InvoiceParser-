@@ -10,3 +10,4 @@ gunicorn
 flask-cors 
 azure-core
 azure-ai-formrecognizer
+python-dotenv

@@ -6,4 +6,5 @@ client_secret.json
 token.pkl
 outputs/
 config.json
-.env
+__pycache__/
+*.pyc

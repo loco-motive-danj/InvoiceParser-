@@ -12,6 +12,12 @@ from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
+from dotenv import load_dotenv
+
+load_dotenv()
+
+client_id = os.getenv("GOOGLE_CLIENT_ID")
+token_path = os.getenv("TOKEN_PATH", "./token.pkl")
 
 # Load environment variables
 load_dotenv()

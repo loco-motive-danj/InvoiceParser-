@@ -5,12 +5,31 @@ from flask import Flask, render_template_string, send_file, redirect, url_for, j
 import pandas as pd
 import os
 from glob import glob
-#import subprocess
+import logging
 from flask_cors import CORS
+from main import run_parser
 
+run_parser()
+
+#  Load environment variables
 load_dotenv()
+
+#  Configure logging
+logging.basicConfig(level=logging.INFO)
+
+#  Flask setup
 app = Flask(__name__)
 CORS(app)
+
+#  Configurable paths
+OUTPUT_DIR = os.getenv("OUTPUT_DIR", "outputs")
+MERGED_FILE = os.path.join(OUTPUT_DIR, "All_Receipts_Combined.xlsx")
+
+
+@app.route('/health')
+def health():
+    return "OK", 200
+
 
 @app.route('/')
 def home():
@@ -26,19 +45,26 @@ def home():
         </form>
     """)
 
+
 @app.post('/api/run-parser')
 def api_run_parser():
     """JSON API for React: trigger parsing workflow."""
     try:
-        subprocess.run(["python", "main.py"], check=True)
-        return jsonify({"status": "ok", "message": "Parsing completed successfully"})
-    except subprocess.CalledProcessError as e:
+        run_parser()
+        app.logger.info("Parsing completed via API")
+        return jsonify({
+            "status": "ok",
+            "message": "Parsing completed successfully"
+        })
+    except Exception as e:
+        app.logger.error(f"Parsing failed: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 @app.route('/merge')
 def merge():
     """Combine all parsed Excel files into one."""
-    files = glob("outputs/*_parsed.xlsx")
+    files = glob(f"{OUTPUT_DIR}/*_parsed.xlsx")
     if not files:
         return "No parsed files available yet.", 404
 
@@ -49,18 +75,20 @@ def merge():
         all_data.append(df)
 
     merged = pd.concat(all_data, ignore_index=True)
-    out_path = "outputs/All_Receipts_Combined.xlsx"
-    merged.to_excel(out_path, index=False)
+    merged.to_excel(MERGED_FILE, index=False)
 
-    return send_file(out_path, as_attachment=True)
+    return send_file(MERGED_FILE, as_attachment=True)
 
 
 @app.post('/api/merge')
 def api_merge():
     """JSON API for React: merge parsed files and return download URL."""
-    files = glob("outputs/*_parsed.xlsx")
+    files = glob(f"{OUTPUT_DIR}/*_parsed.xlsx")
     if not files:
-        return jsonify({"status": "empty", "message": "No parsed files available yet."}), 404
+        return jsonify({
+            "status": "empty",
+            "message": "No parsed files available yet."
+        }), 404
 
     all_data = []
     for f in files:
@@ -69,27 +97,31 @@ def api_merge():
         all_data.append(df)
 
     merged = pd.concat(all_data, ignore_index=True)
-    out_path = "outputs/All_Receipts_Combined.xlsx"
-    merged.to_excel(out_path, index=False)
+    merged.to_excel(MERGED_FILE, index=False)
     return jsonify({
-        "status": "ok",
-        "path": out_path,
-        "download_url": url_for('download_combined', _external=False)
+        "status":
+        "ok",
+        "path":
+        MERGED_FILE,
+        "download_url":
+        url_for('download_combined', _external=False)
     })
 
 
 @app.get('/download')
 def download_combined():
     """Download the combined Excel file if it exists."""
-    out_path = "outputs/All_Receipts_Combined.xlsx"
-    if not os.path.exists(out_path):
+    if not os.path.exists(MERGED_FILE):
         return "No combined file available yet.", 404
-    return send_file(out_path, as_attachment=True)
+    return send_file(MERGED_FILE, as_attachment=True)
+
 
 @app.route('/run-parser', methods=['POST'])
 def run_parser_route():
+
     def background_task():
         run_parser()
+        app.logger.info("Background parsing started")
 
     threading.Thread(target=background_task).start()
     return render_template_string("""
@@ -98,6 +130,6 @@ def run_parser_route():
         <a href="/">⬅️ Back to Dashboard</a>
     """)
 
+
 if __name__ == '__main__':
-    # host 0.0.0.0 ensures it works on Render or Replit
-    app.run(host='0.0.0.0', port=10000)
+    app.run(host='0.0.0.0', port=10000, debug=False)

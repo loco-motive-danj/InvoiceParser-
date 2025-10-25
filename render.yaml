@@ -1,0 +1,15 @@
+services:
+- type: web
+  name: receipts-api
+  env: python
+  buildCommand: pip install -r requirements.txt
+  startCommand: python app.py
+  envVars:
+    - key: GOOGLE_CLIENT_ID
+      sync: false
+    - key: GOOGLE_CLIENT_SECRET
+      sync: false
+    - key: AZURE_KEY
+      sync: false
+    - key: AZURE_ENDPOINT
+      sync: false
