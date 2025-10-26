@@ -26,7 +26,7 @@ token_path = os.getenv("TOKEN_PATH", "./token.pkl")
 
 # Load environment variables
 
-print(f"🔍 GOOGLE_SERVICE_KEY loaded: {'GOOGLE_SERVICE_KEY' in os.environ}")
+print(f"🔍 GOOGLE_ACCOUNT_KEY loaded: {'GOOGLE_ACCOUNT_KEY' in os.environ}")
 
 
 SCOPES = ["https://www.googleapis.com/auth/drive"]
