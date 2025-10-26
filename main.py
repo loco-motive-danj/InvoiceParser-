@@ -272,3 +272,10 @@ if __name__ == "__main__":
     else:
         print("🌐 Starting Flask server")
         app.run(host="0.0.0.0", port=8080, debug=True)
+    try:
+        run_parser()
+    except Exception as e:
+        import traceback
+    print("🔥 Uncaught exception:")
+    traceback.print_exc()
+    raise
