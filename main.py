@@ -75,7 +75,7 @@ def analyze_receipt(file_bytes, max_retries=5):
 
     for attempt in range(max_retries):
         resp = requests.post(
-            f"{AZURE_ENDPOINT}formrecognizer/documentModels/{MODEL}:analyze",
+            f"{AZURE_ENDPOINT}/formrecognizer/documentModels/{MODEL}:analyze",
             headers=headers,
             params=params,
             data=file_bytes)
