@@ -43,7 +43,10 @@ print(f"🔍 MODEL: {MODEL}")
 # 🔐 OAuth-based Google Drive auth
 def get_drive_service():
     # Load service account credentials from environment variable
-    service_account_info = json.loads(os.environ["GOOGLE_SERVICE_ACCOUNT"])
+    service_account_info = json.loads(os.getenv("GOOGLE_SERVICE_ACCOUNT"))
+    raw_key = os.getenv("GOOGLE_SERVICE_ACCOUNT")
+    if not raw_key:
+        raise EnvironmentError("GOOGLE_SERVICE_ACCOUNT is missing from environment")
     creds = service_account.Credentials.from_service_account_info(service_account_info)
     drive = build('drive', 'v3', credentials=creds)
     return drive
