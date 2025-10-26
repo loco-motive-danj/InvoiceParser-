@@ -6,6 +6,7 @@ import glob
 import pickle
 import pandas as pd
 import requests
+import mimetypes
 from flask import Flask, request, jsonify, send_file
 from dotenv import load_dotenv
 from google.auth.transport.requests import Request
@@ -100,7 +101,13 @@ def download_file(drive_service, file_id, filename):
 
 
 # Analyze receipt
-def analyze_receipt(file_path):
+
+def analyze_receipt_dynamic(file_or_bytes, name="receipt"):
+    """
+    Sends a PDF or image (JPEG/PNG) to Azure Form Recognizer and returns the parsed result.
+    Accepts either a file path (str) or raw bytes (bytes).
+    Automatically handles rate limits (429), retries, and polling.
+    """
     endpoint = os.getenv("AZURE_ENDPOINT")
     key = os.getenv("AZURE_KEY")
     model = os.getenv("MODEL", "prebuilt-receipt")
@@ -108,23 +115,49 @@ def analyze_receipt(file_path):
     if not endpoint or not endpoint.startswith("http"):
         raise ValueError(f"AZURE_ENDPOINT is invalid: {endpoint}")
 
-    url = f"{endpoint}/formrecognizer/documentModels/{model}:analyze?api-version=2023-07-31"
+    # Detect content and MIME type
+    if isinstance(file_or_bytes, str):
+        mime_type, _ = mimetypes.guess_type(file_or_bytes)
+        with open(file_or_bytes, "rb") as f:
+            content = f.read()
+    else:
+        content = file_or_bytes
+        mime_type = "application/pdf" if content[:4] == b"%PDF" else "image/jpeg"
+
+    if not mime_type:
+        raise ValueError("Unable to determine MIME type for Azure request")
+
     headers = {
-        "Content-Type": "application/pdf",
+        "Content-Type": mime_type,
         "Ocp-Apim-Subscription-Key": key
     }
 
-    with open(file_path, "rb") as f:
-        content = f.read()
+    print(f"📤 Sending {len(content)} bytes as {mime_type} to Azure")
 
-    resp = requests.post(url, headers=headers, data=content)
-    if resp.status_code != 202:
-        print(f"❌ Azure response: {resp.text}")
-        raise Exception(f"Azure request failed ({resp.status_code})")
+    url = f"{endpoint}/formrecognizer/documentModels/{model}:analyze?api-version=2023-07-31"
 
-    # Step 2: Poll for result
+    # Retry logic for 429 rate limit
+    for attempt in range(3):
+        resp = requests.post(url, headers=headers, data=content)
+        if resp.status_code == 202:
+            break
+        elif resp.status_code == 429:
+            retry_after = int(resp.headers.get("Retry-After", "30"))
+            print(f"⏳ Rate limit hit. Retrying after {retry_after} seconds...")
+            time.sleep(retry_after)
+        else:
+            print(f"❌ Azure response: {resp.text}")
+            raise Exception(f"Azure request failed ({resp.status_code})")
+    else:
+        raise Exception("Azure request failed after multiple retries")
+
     result_url = resp.headers["operation-location"]
-    for _ in range(10):
+    max_wait = 60  # seconds
+    interval = 2
+    attempts = max_wait // interval
+
+    for i in range(attempts):
+        print(f"⏳ Polling Azure... attempt {i+1}")
         result_resp = requests.get(result_url, headers={"Ocp-Apim-Subscription-Key": key})
         result_json = result_resp.json()
         status = result_json.get("status")
@@ -135,9 +168,10 @@ def analyze_receipt(file_path):
             print(f"❌ Azure result failed: {result_json}")
             raise Exception("Azure analysis failed")
 
-        time.sleep(2)
+        time.sleep(interval)
 
     raise Exception("Azure polling timed out")
+
 
 
 # 📊 Parse and save to Excel
@@ -222,22 +256,22 @@ def run_parser():
             print(f"⏭️ Skipping Google Sheet: {name}")
             continue
 
-    print(f"🔍 Processing {name}...")
-    content = download_file(drive, f["id"], name)
-    parsed = analyze_receipt(content)
-    out_path = parse_and_save(parsed, name)
+        print(f"🔍 Processing {name}...")
+        content = download_file(drive, f["id"], name)
+        parsed = analyze_receipt_dynamic(content)
+        out_path = parse_and_save(parsed, name)
 
-    if out_path:
-        print(f"✅ Parsed and saved: {out_path}")
-        upload_via_template(
-            local_path=out_path,
-            new_filename=os.path.basename(out_path),
-            drive_service=drive,
-            folder_id=FOLDER_ID,
-            template_id=TEMPLATE_FILE_ID
-        )
-    else:
-        print(f"⚠️ No data found for {name}")
+        if out_path:
+            print(f"✅ Parsed and saved: {out_path}")
+            upload_via_template(
+                local_path=out_path,
+                new_filename=os.path.basename(out_path),
+                drive_service=drive,
+                folder_id=FOLDER_ID,
+                template_id=TEMPLATE_FILE_ID
+            )
+        else:
+            print(f"⚠️ No data found for {name}")
 
 
 # 🌐 Flask routes
@@ -262,7 +296,7 @@ def parse_uploaded_receipt():
         return jsonify({"error": "No file uploaded"}), 400
     content = file.read()
     try:
-        parsed = analyze_receipt(content)
+        parsed = analyze_receipt_dynamic(content)
         name = file.filename or "receipt"
         out_path = parse_and_save(parsed, name)
         return jsonify({"status": "success", "output": out_path})
