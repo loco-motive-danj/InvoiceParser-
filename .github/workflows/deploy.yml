@@ -28,6 +28,7 @@ jobs:
     - name: Run parser
       env:
         GOOGLE_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
+        AZURE_ENDPOINT: ${{ secrets.AZURE_ENDPOINT }}
         AZURE_FORM_RECOGNIZER_ENDPOINT: ${{ secrets.AZURE_FORM_RECOGNIZER_ENDPOINT }}
         AZURE_FORM_RECOGNIZER_MODEL: ${{ secrets.AZURE_FORM_RECOGNIZER_MODEL }}
       run: python main.py
