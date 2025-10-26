@@ -21,7 +21,9 @@ client_id = os.getenv("GOOGLE_CLIENT_ID")
 token_path = os.getenv("TOKEN_PATH", "./token.pkl")
 
 # Load environment variables
-load_dotenv()
+
+print(f"🔍 GOOGLE_SERVICE_KEY loaded: {'GOOGLE_SERVICE_KEY' in os.environ}")
+
 
 SCOPES = ["https://www.googleapis.com/auth/drive"]
 AZURE_KEY = os.getenv("AZURE_KEY")
@@ -30,12 +32,15 @@ FOLDER_ID = os.getenv("FOLDER_ID", "1gBOXAU9b1zSt06c-1YPQcmPiu02zTdXZ")
 MODEL = "prebuilt-receipt"
 
 app = Flask(__name__)
+print(f"🔍 AZURE_ENDPOINT: {AZURE_ENDPOINT}")
+print(f"🔍 AZURE_KEY: {AZURE_KEY}")
+print(f"🔍 MODEL: {MODEL}")
 
 
 # 🔐 OAuth-based Google Drive auth
 def get_drive_service():
     # Load service account credentials from environment variable
-    service_account_info = json.loads(os.environ["GOOGLE_SERVICE_KEY"])
+    service_account_info = json.loads(os.environ["GOOGLE_SERVICE_ACCOUNT"])
     creds = service_account.Credentials.from_service_account_info(service_account_info)
     drive = build('drive', 'v3', credentials=creds)
     return drive
