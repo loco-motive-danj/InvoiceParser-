@@ -97,11 +97,13 @@ def download_file(drive_service, file_id, filename):
 
 
 # Analyze receipt
-
 def analyze_receipt(file_path):
     endpoint = os.getenv("AZURE_ENDPOINT")
     key = os.getenv("AZURE_KEY")
     model = os.getenv("MODEL", "prebuilt-receipt")
+
+    if not endpoint or not endpoint.startswith("http"):
+        raise ValueError(f"AZURE_ENDPOINT is invalid: {endpoint}")
 
     url = f"{endpoint}/formrecognizer/documentModels/{model}:analyze?api-version=2023-07-31"
     headers = {
@@ -110,10 +112,9 @@ def analyze_receipt(file_path):
     }
 
     with open(file_path, "rb") as f:
-        data = f.read()
+        content = f.read()
 
-    # Step 1: Submit the document
-    resp = requests.post(url, headers=headers, data=data)
+    resp = requests.post(url, headers=headers, data=content)
     if resp.status_code != 202:
         print(f"❌ Azure response: {resp.text}")
         raise Exception(f"Azure request failed ({resp.status_code})")
@@ -131,9 +132,10 @@ def analyze_receipt(file_path):
             print(f"❌ Azure result failed: {result_json}")
             raise Exception("Azure analysis failed")
 
-        time.sleep(2)  # wait before retrying
+        time.sleep(2)
 
     raise Exception("Azure polling timed out")
+
 
 # 📊 Parse and save to Excel
 def parse_and_save(data, name):
@@ -218,6 +220,7 @@ def run_parser():
     content = download_file(drive, f["id"], name)
     parsed = analyze_receipt(content)
     out_path = parse_and_save(parsed, name)
+
     if out_path:
         print(f"✅ Parsed and saved: {out_path}")
         upload_via_template(
