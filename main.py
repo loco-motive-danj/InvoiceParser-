@@ -14,9 +14,12 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 from dotenv import load_dotenv
 from google.oauth2 import service_account
+from googleapiclient.http import MediaFileUpload
 
 load_dotenv()
 
+
+TEMPLATE_FILE_ID = os.getenv("TEMPLATE_FILE_ID")
 client_id = os.getenv("GOOGLE_CLIENT_ID")
 token_path = os.getenv("TOKEN_PATH", "./token.pkl")
 
@@ -48,69 +51,89 @@ def get_drive_service():
 
 drive = get_drive_service()
 
+def upload_via_template(local_path, new_filename, drive_service, folder_id, template_id):
+    # Step 1: Copy the template
+    file_metadata = {
+        "name": new_filename,
+        "parents": [folder_id]
+    }
+   
 #drive = build("drive", "v3", credentials=creds)
 
 
 # 📂 List files in a folder
-def list_files(folder_id):
-    q = f"'{folder_id}' in parents and trashed=false"
-    res = drive.files().list(q=q).execute()
-    return res.get("files", [])
+def list_files(drive_service, folder_id):
+    results = drive_service.files().list(
+    q=f"'{folder_id}' in parents and trashed = false",
+    fields="files(id, name, mimeType)"
+).execute()
+    return results.get("files", []) 
 
 
 # 📥 Download a file by ID
-def download_file(file_id, name):
-    req = drive.files().get_media(fileId=file_id)
+def download_file(drive_service, file_id, filename):
+    file = drive_service.files().get(fileId=file_id, fields="mimeType").execute()
+    mime_type = file["mimeType"]
+
+    if mime_type == "application/vnd.google-apps.spreadsheet":
+        request = drive_service.files().export_media(
+            fileId=file_id,
+            mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    else:
+        request = drive_service.files().get_media(fileId=file_id)
+
     fh = io.BytesIO()
-    downloader = MediaIoBaseDownload(fh, req)
+    downloader = MediaIoBaseDownload(fh, request)
     done = False
     while not done:
         _, done = downloader.next_chunk()
-    fh.seek(0)
-    return fh.read()
+
+    local_path = os.path.join("downloads", filename)
+    os.makedirs("downloads", exist_ok=True)
+    with open(local_path, "wb") as f:
+        f.write(fh.getbuffer())
+    return local_path
 
 
-# 🧠 Analyze receipt with Azure
-def analyze_receipt(file_bytes, max_retries=5):
+# Analyze receipt
+
+def analyze_receipt(file_path):
+    endpoint = os.getenv("AZURE_ENDPOINT")
+    key = os.getenv("AZURE_KEY")
+    model = os.getenv("MODEL", "prebuilt-receipt")
+
+    url = f"{endpoint}/formrecognizer/documentModels/{model}:analyze?api-version=2023-07-31"
     headers = {
-        "Ocp-Apim-Subscription-Key": AZURE_KEY,
-        "Content-Type": "application/octet-stream"
+        "Content-Type": "application/pdf",
+        "Ocp-Apim-Subscription-Key": key
     }
-    params = {"api-version": "2023-07-31"}
 
-    for attempt in range(max_retries):
-        resp = requests.post(
-            f"{AZURE_ENDPOINT}/formrecognizer/documentModels/{MODEL}:analyze",
-            headers=headers,
-            params=params,
-            data=file_bytes)
+    with open(file_path, "rb") as f:
+        data = f.read()
 
-        if resp.status_code in (200, 202):
-            break
+    # Step 1: Submit the document
+    resp = requests.post(url, headers=headers, data=data)
+    if resp.status_code != 202:
+        print(f"❌ Azure response: {resp.text}")
+        raise Exception(f"Azure request failed ({resp.status_code})")
 
-        if resp.status_code == 429:
-            retry_after = int(resp.headers.get("Retry-After", "30"))
-            print(f"⏳ Rate limit hit. Retrying in {retry_after} seconds...")
-            time.sleep(retry_after)
-        else:
-            print("Azure POST failed:", resp.status_code, resp.text)
-            raise Exception(f"Azure request failed ({resp.status_code})")
-    else:
-        raise Exception("Exceeded max retries due to rate limiting.")
+    # Step 2: Poll for result
+    result_url = resp.headers["operation-location"]
+    for _ in range(10):
+        result_resp = requests.get(result_url, headers={"Ocp-Apim-Subscription-Key": key})
+        result_json = result_resp.json()
+        status = result_json.get("status")
 
-    op = resp.headers.get("operation-location")
-    if not op:
-        raise Exception("No operation-location header returned from Azure.")
+        if status == "succeeded":
+            return result_json
+        elif status == "failed":
+            print(f"❌ Azure result failed: {result_json}")
+            raise Exception("Azure analysis failed")
 
-    while True:
-        r = requests.get(op, headers={"Ocp-Apim-Subscription-Key": AZURE_KEY})
-        data = r.json()
-        if data.get("status") == "succeeded":
-            return data
-        elif data.get("status") == "failed":
-            raise Exception("Azure analysis failed.")
-        time.sleep(2)
+        time.sleep(2)  # wait before retrying
 
+    raise Exception("Azure polling timed out")
 
 # 📊 Parse and save to Excel
 def parse_and_save(data, name):
@@ -176,23 +199,36 @@ def merge_excels(output_dir="outputs"):
 def run_parser():
     print("🚀 run_parser() started")
     print("📂 Using folder ID:", FOLDER_ID)
-    files = list_files(FOLDER_ID)
+    files = list_files(drive, FOLDER_ID)
     print(f"📁 Found {len(files)} files")
+
     for f in files:
         name = f["name"]
+        mime = f["mimeType"]
+
         if name.endswith(".xlsx") or "_parsed" in name:
-            print(f"⏭️ Skipping {name}")
+            print(f"⏭️ Skipping {name} (already parsed or Excel)")
             continue
-        print(f"🔍 Processing {name}...")
-        content = download_file(f["id"], f["name"])
-        parsed = analyze_receipt(content)
-        out_path = parse_and_save(parsed, f["name"])
-        if out_path:
-            print(f"✅ Parsed and saved: {out_path}")
-            upload_to_drive(out_path, FOLDER_ID)
-        else:
-            print(f"⚠️ No data found for {f['name']}")
-    merge_excels()
+
+        if mime == "application/vnd.google-apps.spreadsheet":
+            print(f"⏭️ Skipping Google Sheet: {name}")
+            continue
+
+    print(f"🔍 Processing {name}...")
+    content = download_file(drive, f["id"], name)
+    parsed = analyze_receipt(content)
+    out_path = parse_and_save(parsed, name)
+    if out_path:
+        print(f"✅ Parsed and saved: {out_path}")
+        upload_via_template(
+            local_path=out_path,
+            new_filename=os.path.basename(out_path),
+            drive_service=drive,
+            folder_id=FOLDER_ID,
+            template_id=TEMPLATE_FILE_ID
+        )
+    else:
+        print(f"⚠️ No data found for {name}")
 
 
 # 🌐 Flask routes
