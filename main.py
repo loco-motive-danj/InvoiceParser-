@@ -9,10 +9,11 @@ import requests
 from flask import Flask, request, jsonify, send_file
 from dotenv import load_dotenv
 from google.auth.transport.requests import Request
-from google_auth_oauthlib.flow import InstalledAppFlow
+#from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 from dotenv import load_dotenv
+from google.oauth2 import service_account
 
 load_dotenv()
 
@@ -33,30 +34,15 @@ app = Flask(__name__)
 
 # 🔐 OAuth-based Google Drive auth
 def get_drive_service():
-    creds = None
-    if os.path.exists("token.pkl"):
-        with open("token.pkl", "rb") as token:
-            creds = pickle.load(token)
-
-    if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-
-    if not creds or not creds.valid:
-        flow = InstalledAppFlow.from_client_secrets_file(
-            "client_secret.json", SCOPES)
-        auth_url, _ = flow.authorization_url(prompt="consent")
-        print("🔗 Visit this URL to authorize:")
-        print(auth_url)
-        code = input("📥 Paste the authorization code here: ")
-        flow.fetch_token(code=code)
-        creds = flow.credentials
-        with open("token.pkl", "wb") as token:
-            pickle.dump(creds, token)
-
+    SCOPES = ["https://www.googleapis.com/auth/drive"]
+    creds = service_account.Credentials.from_service_account_file(
+        "service-account.json", scopes=SCOPES)
     return build("drive", "v3", credentials=creds)
 
 
 drive = get_drive_service()
+
+#drive = build("drive", "v3", credentials=creds)
 
 
 # 📂 List files in a folder

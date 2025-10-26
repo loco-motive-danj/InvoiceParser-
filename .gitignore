@@ -8,3 +8,4 @@ outputs/
 config.json
 __pycache__/
 *.pyc
+service_account.json
