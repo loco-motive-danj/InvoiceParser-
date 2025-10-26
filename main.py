@@ -34,10 +34,11 @@ app = Flask(__name__)
 
 # 🔐 OAuth-based Google Drive auth
 def get_drive_service():
-    SCOPES = ["https://www.googleapis.com/auth/drive"]
-    creds = service_account.Credentials.from_service_account_file(
-        "service-account.json", scopes=SCOPES)
-    return build("drive", "v3", credentials=creds)
+    # Load service account credentials from environment variable
+    service_account_info = json.loads(os.environ["GOOGLE_SERVICE_KEY"])
+    creds = service_account.Credentials.from_service_account_info(service_account_info)
+    drive = build('drive', 'v3', credentials=creds)
+    return drive
 
 
 drive = get_drive_service()
