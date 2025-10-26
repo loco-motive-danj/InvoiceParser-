@@ -189,7 +189,10 @@ def upload_to_drive(local_path, folder_id):
 
 # 📁 Merge all Excel outputs
 def merge_excels(output_dir="outputs"):
-    all_files = glob.glob(os.path.join(output_dir, "*_parsed.xlsx"))
+    all_files = [
+    f for f in glob.glob(os.path.join(output_dir, "*.xlsx"))
+    if not f.endswith("All_Receipts_Combined.xlsx")
+]
     if not all_files:
         print("ℹ️ No parsed files to merge.")
         return
