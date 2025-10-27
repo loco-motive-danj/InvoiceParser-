@@ -1,13 +1,15 @@
 from dotenv import load_dotenv
 import threading
 from main import run_parser
-from flask import Flask, render_template_string, send_file, redirect, url_for, jsonify
+from flask import Flask, render_template_string, send_file, redirect, url_for, jsonify, send_from_directory
 import pandas as pd
 import os
 from glob import glob
 import logging
 from flask_cors import CORS
 from main import run_parser
+import zipfile
+import io
 
 run_parser()
 
@@ -32,19 +34,36 @@ def health():
 
 
 @app.route('/')
+@app.route("/")
 def home():
     return render_template_string("""
         <h2>📊 Receipt Parser Dashboard</h2>
         <p>Receipts are automatically parsed in the background <em>or</em> you can trigger parsing manually below.</p>
+
         <form action="/run-parser" method="post">
             <button type="submit">🔁 Parse New Receipts</button>
         </form>
         <br>
+
         <form action="/merge" method="get">
             <button type="submit">📥 Download Combined Excel</button>
         </form>
-    """)
+        <br>
 
+        <form action="/outputs" method="get">
+            <button type="submit">📂 View Individual Receipt Files</button>
+        </form>
+        <br>
+
+        <form action="/download-all" method="get">
+            <button type="submit">📦 Download All Parsed Receipts (ZIP)</button>
+        </form>
+        <br>
+
+        <form action="/cleanup" method="post">
+            <button type="submit">🧹 Cleanup Parsed Files</button>
+        </form>
+    """)
 
 @app.post('/api/run-parser')
 def api_run_parser():
@@ -127,6 +146,54 @@ def run_parser_route():
     return render_template_string("""
         <h2>🔁 Parsing started in background</h2>
         <p>Check back in a few minutes for results.</p>
+        <a href="/">⬅️ Back to Dashboard</a>
+    """)
+
+@app.route('/outputs')
+def list_outputs():
+    """List all individual parsed Excel files."""
+    files = glob(f"{OUTPUT_DIR}/*_parsed.xlsx")
+    file_links = [
+        f"<li><a href='/download-output/{os.path.basename(f)}'>{os.path.basename(f)}</a></li>"
+        for f in files
+    ]
+    return render_template_string(f"""
+        <h2>📁 Individual Parsed Receipts</h2>
+        <ul>{''.join(file_links)}</ul>
+        <a href="/">⬅️ Back to Dashboard</a>
+    """)
+
+
+@app.route('/download-all')
+def download_all_outputs():
+    """Download all parsed Excel files as a single ZIP archive."""
+    files = glob(f"{OUTPUT_DIR}/*_parsed.xlsx")
+    if not files:
+        return "No parsed files available yet.", 404
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w") as zip_file:
+        for f in files:
+            zip_file.write(f, arcname=os.path.basename(f))
+    zip_buffer.seek(0)
+
+    return send_file(zip_buffer, mimetype='application/zip', as_attachment=True, download_name="All_Receipts.zip")
+
+@app.route('/cleanup', methods=['POST'])
+def cleanup_outputs():
+    """Delete all parsed Excel files."""
+    files = glob(f"{OUTPUT_DIR}/*_parsed.xlsx")
+    deleted = []
+    for f in files:
+        try:
+            os.remove(f)
+            deleted.append(os.path.basename(f))
+        except Exception as e:
+            app.logger.warning(f"Failed to delete {f}: {e}")
+    return render_template_string(f"""
+        <h2>🧹 Cleanup Complete</h2>
+        <p>Deleted {len(deleted)} files:</p>
+        <ul>{''.join(f'<li>{name}</li>' for name in deleted)}</ul>
         <a href="/">⬅️ Back to Dashboard</a>
     """)
 

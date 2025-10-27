@@ -7,7 +7,8 @@ import pickle
 import pandas as pd
 import requests
 import mimetypes
-from flask import Flask, request, jsonify, send_file
+import threading
+from flask import Flask, request, jsonify, send_file, send_from_directory, render_template_string
 from dotenv import load_dotenv
 from google.auth.transport.requests import Request
 #from google_auth_oauthlib.flow import InstalledAppFlow
@@ -275,9 +276,6 @@ def run_parser():
 
 
 # 🌐 Flask routes
-@app.route("/")
-def home():
-    return "<h2>🧾 Receipt Parser Running — v3.2</h2>"
 
 
 @app.route("/download")
@@ -289,19 +287,48 @@ def download_results():
         return "<p>No results found yet.</p>"
 
 
-@app.route("/parse", methods=["POST"])
-def parse_uploaded_receipt():
-    file = request.files.get("file")
-    if not file:
-        return jsonify({"error": "No file uploaded"}), 400
-    content = file.read()
+@app.route("/parse-all", methods=["POST"])
+def parse_all_receipts():
     try:
-        parsed = analyze_receipt_dynamic(content)
-        name = file.filename or "receipt"
-        out_path = parse_and_save(parsed, name)
-        return jsonify({"status": "success", "output": out_path})
+        threading.Thread(target=run_parser, daemon=True).start()
+        return jsonify({"status": "started"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+    
+@app.route("/outputs", methods=["GET"])
+def list_outputs():
+    output_dir = "outputs"
+    files = [f for f in os.listdir(output_dir) if f.endswith(".xlsx")]
+    return jsonify({"files": files})
+
+@app.route("/download/<filename>", methods=["GET"])
+def download_file(drive, file_id, name):
+    request = drive.files().get_media(fileId=file_id)
+    fh = io.BytesIO()
+    downloader = MediaIoBaseDownload(fh, request)
+    done = False
+    while not done:
+        status, done = downloader.next_chunk()
+    fh.seek(0)
+    return fh.read()
+
+@app.route('/cleanup', methods=['POST'])
+def cleanup_outputs():
+    files = glob(f"{OUTPUT_DIR}/*_parsed.xlsx")
+    deleted = []
+    for f in files:
+        try:
+            os.remove(f)
+            deleted.append(os.path.basename(f))
+        except Exception as e:
+            app.logger.warning(f"Failed to delete {f}: {e}")
+    return render_template_string(f"""
+        <h2>🧹 Cleanup Complete</h2>
+        <p>Deleted {len(deleted)} files:</p>
+        <ul>{''.join(f'<li>{name}</li>' for name in deleted)}</ul>
+        <a href="/">⬅️ Back to Dashboard</a>
+    """)
 
 
 # 🏁 Entry point
