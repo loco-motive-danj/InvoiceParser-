@@ -20,7 +20,7 @@ from googleapiclient.http import MediaFileUpload
 
 load_dotenv()
 
-
+json.loads(os.getenv("GOOGLE_SERVICE_ACCOUNT"))
 TEMPLATE_FILE_ID = os.getenv("TEMPLATE_FILE_ID")
 client_id = os.getenv("GOOGLE_CLIENT_ID")
 token_path = os.getenv("TOKEN_PATH", "./token.pkl")
