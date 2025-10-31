@@ -38,6 +38,18 @@ def health():
 def home():
     return render_template_string("""
         <h2>📊 Receipt Parser Dashboard</h2>
+        <style>
+        body {
+            font-size: 18px;
+            font-family: Arial, sans-serif;
+        }
+        h1, h2 {
+            font-size: 24px;
+        }
+        li {
+            font-size: 16px;
+        }
+        </style>
         <p>Receipts are automatically parsed in the background <em>or</em> you can trigger parsing manually below.</p>
 
         <form action="/run-parser" method="post">

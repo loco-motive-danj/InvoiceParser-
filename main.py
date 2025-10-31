@@ -5,6 +5,7 @@ import time
 import glob
 import pickle
 import pandas as pd
+from openpyxl import load_workbook
 import requests
 import mimetypes
 import threading
@@ -23,6 +24,8 @@ load_dotenv()
 branch = os.getenv("BRANCH", "demo")
 env_file = ".env.prod" if branch == "prod" else ".env.demo"
 load_dotenv(dotenv_path=env_file)
+
+OUTPUT_DIR = "outputs"
 
 json.loads(os.getenv("GOOGLE_SERVICE_ACCOUNT"))
 TEMPLATE_FILE_ID = os.getenv("TEMPLATE_FILE_ID")
@@ -157,7 +160,7 @@ def analyze_receipt_dynamic(file_or_bytes, name="receipt"):
         raise Exception("Azure request failed after multiple retries")
 
     result_url = resp.headers["operation-location"]
-    max_wait = 60  # seconds
+    max_wait = 500  # seconds
     interval = 2
     attempts = max_wait // interval
 
@@ -200,13 +203,22 @@ def parse_and_save(data, name):
 
     df = pd.DataFrame(rows)
     df["Project"] = project_name
-    df["Date"] = receipt_date  # ✅ This line adds the receipt date
+    df["Date"] = receipt_date
 
     os.makedirs("outputs", exist_ok=True)
     out_path = f"outputs/{os.path.splitext(name)[0]}_parsed.xlsx"
     df.to_excel(out_path, index=False)
-    return out_path
 
+    # 🔧 Set column widths
+    wb = load_workbook(out_path)
+    ws = wb.active
+    for col in ws.columns:
+        max_length = max(len(str(cell.value)) if cell.value else 0 for cell in col)
+        adjusted_width = max(max_length + 2, 15)  # Minimum width of 15
+        ws.column_dimensions[col[0].column_letter].width = adjusted_width
+    wb.save(out_path)
+
+    return out_path
 # 📁 Merge all Excel outputs
 def merge_excels(output_dir="outputs"):
     all_files = [
@@ -288,17 +300,43 @@ def list_outputs():
     files = [f for f in os.listdir(output_dir) if f.endswith(".xlsx")]
     return jsonify({"files": files})
 
+
+# 🌐 Flask route to serve local Excel files
 @app.route("/download/<filename>", methods=["GET"])
-def download_file(drive, file_id, name):
-    request = drive.files().get_media(fileId=file_id)
+def download_output_file(filename):
+    path = os.path.join("outputs", filename)
+    if os.path.exists(path):
+        return send_file(path, as_attachment=True)
+    else:
+        return f"<p>File {filename} not found.</p>", 404
+
+
+# 📥 Helper function to download a file from Google Drive
+def download_from_drive(drive_service, file_id, filename):
+    file = drive_service.files().get(fileId=file_id, fields="mimeType").execute()
+    mime_type = file["mimeType"]
+
+    if mime_type == "application/vnd.google-apps.spreadsheet":
+        request = drive_service.files().export_media(
+            fileId=file_id,
+            mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    else:
+        request = drive_service.files().get_media(fileId=file_id)
+
     fh = io.BytesIO()
     downloader = MediaIoBaseDownload(fh, request)
     done = False
     while not done:
-        status, done = downloader.next_chunk()
-    fh.seek(0)
-    return fh.read()
+        _, done = downloader.next_chunk()
 
+    local_path = os.path.join("downloads", filename)
+    os.makedirs("downloads", exist_ok=True)
+    with open(local_path, "wb") as f:
+        f.write(fh.getbuffer())
+    return local_path
+
+    
 @app.route('/cleanup', methods=['POST'])
 def cleanup_outputs():
     files = glob(f"{OUTPUT_DIR}/*_parsed.xlsx")
