@@ -19,6 +19,9 @@ from google.oauth2 import service_account
 from googleapiclient.http import MediaFileUpload
 
 load_dotenv()
+branch = os.getenv("BRANCH", "demo")
+env_file = ".env.prod" if branch == "prod" else ".env.demo"
+load_dotenv(dotenv_path=env_file)
 
 json.loads(os.getenv("GOOGLE_SERVICE_ACCOUNT"))
 TEMPLATE_FILE_ID = os.getenv("TEMPLATE_FILE_ID")
