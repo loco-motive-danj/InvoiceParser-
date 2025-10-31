@@ -33,7 +33,7 @@ print(f"🔍 GOOGLE_ACCOUNT_KEY loaded: {'GOOGLE_ACCOUNT_KEY' in os.environ}")
 SCOPES = ["https://www.googleapis.com/auth/drive"]
 AZURE_KEY = os.getenv("AZURE_KEY")
 AZURE_ENDPOINT = os.getenv("AZURE_ENDPOINT")
-FOLDER_ID = os.getenv("FOLDER_ID", "1gBOXAU9b1zSt06c-1YPQcmPiu02zTdXZ")
+FOLDER_ID = os.getenv("FOLDER_ID", "1fOFfwzZOcHfqoNLRv5FerHzBlzJf5cQH")
 MODEL = "prebuilt-receipt"
 
 app = Flask(__name__)
