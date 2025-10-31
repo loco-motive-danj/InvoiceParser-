@@ -8,6 +8,7 @@ import pandas as pd
 import requests
 import mimetypes
 import threading
+import shutil
 from flask import Flask, request, jsonify, send_file, send_from_directory, render_template_string
 from dotenv import load_dotenv
 from google.auth.transport.requests import Request
@@ -19,6 +20,10 @@ from google.oauth2 import service_account
 from googleapiclient.http import MediaFileUpload
 
 load_dotenv()
+
+branch = os.getenv("BRANCH", "demo")
+env_file = ".env.prod" if branch == "prod" else ".env.demo"
+load_dotenv(dotenv_path=env_file)
 
 json.loads(os.getenv("GOOGLE_SERVICE_ACCOUNT"))
 TEMPLATE_FILE_ID = os.getenv("TEMPLATE_FILE_ID")
@@ -33,7 +38,7 @@ print(f"🔍 GOOGLE_ACCOUNT_KEY loaded: {'GOOGLE_ACCOUNT_KEY' in os.environ}")
 SCOPES = ["https://www.googleapis.com/auth/drive"]
 AZURE_KEY = os.getenv("AZURE_KEY")
 AZURE_ENDPOINT = os.getenv("AZURE_ENDPOINT")
-FOLDER_ID = os.getenv("FOLDER_ID", "1fOFfwzZOcHfqoNLRv5FerHzBlzJf5cQH")
+FOLDER_ID = os.getenv("FOLDER_ID")
 MODEL = "prebuilt-receipt"
 
 app = Flask(__name__)
@@ -180,47 +185,28 @@ def parse_and_save(data, name):
     docs = data["analyzeResult"]["documents"]
     if not docs:
         return None
+
     items = docs[0]["fields"]["Items"]["valueArray"]
     rows = []
     for it in items:
         obj = it["valueObject"]
         rows.append({
-            "Description":
-            obj.get("Description", {}).get("valueString", ""),
-            "Quantity":
-            obj.get("Quantity", {}).get("valueNumber", 1),
-            "Total":
-            obj.get("TotalPrice", {}).get("valueNumber", 0)
+            "Description": obj.get("Description", {}).get("valueString", ""),
+            "Quantity": obj.get("Quantity", {}).get("valueNumber", 1),
+            "Total": obj.get("TotalPrice", {}).get("valueNumber", 0)
         })
 
+    receipt_date = docs[0]["fields"].get("TransactionDate", {}).get("valueDate", "")
     project_name = os.path.splitext(name)[0].split("_")[0]
+
     df = pd.DataFrame(rows)
     df["Project"] = project_name
+    df["Date"] = receipt_date  # ✅ This line adds the receipt date
+
     os.makedirs("outputs", exist_ok=True)
     out_path = f"outputs/{os.path.splitext(name)[0]}_parsed.xlsx"
     df.to_excel(out_path, index=False)
     return out_path
-
-
-# ☁️ Upload to Drive
-def upload_to_drive(local_path, folder_id):
-    file_metadata = {
-        "name":
-        os.path.basename(local_path),
-        "parents": [folder_id],
-        "mimeType":
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    }
-    media = MediaFileUpload(local_path, mimetype=file_metadata["mimeType"])
-    try:
-        drive.files().create(body=file_metadata, media_body=media,
-                             fields="id").execute()
-        print(
-            f"✅ Uploaded {os.path.basename(local_path)} to Drive folder {folder_id}"
-        )
-    except Exception as e:
-        print(f"⚠️ Upload failed: {e}")
-
 
 # 📁 Merge all Excel outputs
 def merge_excels(output_dir="outputs"):
@@ -273,6 +259,7 @@ def run_parser():
             )
         else:
             print(f"⚠️ No data found for {name}")
+            shutil.rmtree("downloads", ignore_errors=True)
 
 
 # 🌐 Flask routes
