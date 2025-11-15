@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 from google.oauth2 import service_account
+import mimetypes
 
 load_dotenv()
 branch = os.getenv("BRANCH", "demo")
@@ -27,6 +28,10 @@ def get_drive_service():
     return build('drive', 'v3', credentials=creds, cache_discovery=False)
 
 drive = get_drive_service()
+
+def get_mime_type(filename):
+    mime_type, _ = mimetypes.guess_type(filename)
+    return mime_type or "application/octet-stream"
 
 def list_files(drive_service, folder_id):
     results = drive_service.files().list(

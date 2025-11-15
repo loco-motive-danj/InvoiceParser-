@@ -8,6 +8,7 @@ from urllib.parse import quote
 from dotenv import load_dotenv
 from main import run_parser, OUTPUT_DIR
 
+
 load_dotenv()
 MERGED_FILE = os.path.join(OUTPUT_DIR, "All_Receipts_Combined.xlsx")
 
