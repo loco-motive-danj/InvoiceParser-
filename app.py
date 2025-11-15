@@ -1,5 +1,3 @@
-# app.py
-
 from flask import Flask, render_template_string, send_file, jsonify, request
 from flask_cors import CORS
 import os, glob, io, zipfile, threading

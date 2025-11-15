@@ -1,5 +1,3 @@
-# main.py
-
 import os, io, json, time, glob, shutil, mimetypes
 import pandas as pd
 from openpyxl import load_workbook
@@ -12,7 +10,7 @@ import mimetypes
 
 load_dotenv()
 branch = os.getenv("BRANCH", "demo")
-env_file = ".env.prod" if branch == "prod" else ".env.demo"
+env_file = ".env.prod" if branch == "main" else ".env.demo"
 load_dotenv(dotenv_path=env_file)
 
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "outputs")
