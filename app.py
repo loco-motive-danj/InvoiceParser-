@@ -5,6 +5,7 @@ import pandas as pd
 from urllib.parse import quote
 from dotenv import load_dotenv
 from main import run_parser, OUTPUT_DIR
+from werkzeug.utils import secure_filename
 
 
 load_dotenv()
@@ -48,6 +49,8 @@ def list_outputs():
 
 @app.route("/download/<filename>")
 def download_output_file(filename):
+    safe_name = secure_filename(filename)
+    path = os.path.join(OUTPUT_DIR, safe_name)
     path = os.path.join(OUTPUT_DIR, filename)
     if os.path.exists(path):
         return send_file(path, as_attachment=True)
@@ -59,10 +62,17 @@ def merge():
     files = glob.glob(f"{OUTPUT_DIR}/*_parsed.xlsx")
     if not files:
         return "No parsed files available yet.", 404
-    all_data = [pd.read_excel(f).assign(Source=os.path.basename(f)) for f in files]
-    merged = pd.concat(all_data, ignore_index=True)
-    merged.to_excel(MERGED_FILE, index=False)
-    return send_file(MERGED_FILE, as_attachment=True)
+    try:
+        all_data = [pd.read_excel(f).assign(Source=os.path.basename(f)) for f in files]
+        merged = pd.concat(all_data, ignore_index=True)
+    except Exception as e:
+        return f"❌ Error reading or merging files: {e}", 500
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    merged_path = os.path.join(OUTPUT_DIR, f"All_Receipts_{timestamp}.xlsx")
+    merged.to_excel(merged_path, index=False)
+    return send_file(merged_path, as_attachment=True)
+
 
 
 @app.route('/download-all')
@@ -83,6 +93,11 @@ def download_all_outputs():
         as_attachment=True,
         download_name="All_Receipts.zip"
     )
+@app.route("/status")
+def status():
+    files = glob.glob(f"{OUTPUT_DIR}/*_parsed.xlsx")
+    return jsonify({"parsed_files": len(files)})
+
 @app.route('/cleanup', methods=['POST'])
 def cleanup_outputs():
     files = glob.glob(f"{OUTPUT_DIR}/*_parsed.xlsx")
@@ -99,6 +114,14 @@ def cleanup_outputs():
         <ul>{''.join(f'<li>{name}</li>' for name in deleted)}</ul>
         <a href="/">⬅️ Back to Dashboard</a>
     """)
+@app.route("/debug")
+def debug():
+    path = "downloads/test.jpg"
+    with open(path, "rb") as f:
+        content = f.read()
+    print(f"📦 Test file size: {len(content)}")
+    print(f"📄 First bytes: {content[:10]}")
+    return "Debug complete"
 
 
 if __name__ == "__main__":

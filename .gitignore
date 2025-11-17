@@ -1,7 +1,7 @@
 service_account.json
 token.json
 credentials_oauth.json
-.env.prod
+.env.main
 .env.demo
 client_secret.json
 token.pkl
