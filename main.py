@@ -94,10 +94,19 @@ def download_file(drive_service, file_id, filename):
 
 
 def analyze_receipt_dynamic(file_or_bytes, name="receipt"):
+    if isinstance(file_or_bytes, str):
+        with open(file_or_bytes, "rb") as f:
+            content = f.read()
+        mime_type = detect_mime_type(content)
+    else:
+        content = file_or_bytes
+        mime_type = "application/pdf" if content[:4] == b"%PDF" else "image/jpeg"
+
     print(f"📤 Sending to Azure: {name}")
     print(f"📄 Detected MIME type: {mime_type}")
     print(f"📦 Content size: {len(content)} bytes")
     print(f"📄 First bytes: {content[:10]}")
+
     if isinstance(file_or_bytes, str):
         mime_type, _ = mimetypes.guess_type(file_or_bytes)
         with open(file_or_bytes, "rb") as f:
@@ -129,13 +138,14 @@ def analyze_receipt_dynamic(file_or_bytes, name="receipt"):
         result_resp = requests.get(result_url, headers={"Ocp-Apim-Subscription-Key": AZURE_KEY})
         result_json = result_resp.json()
         status = result_json.get("status")
-        print(f"⏳ Polling Azure... attempt {i}, status: {status}")  
-    if status == "succeeded":
-        return result_json
-    elif status == "failed":
-        raise Exception("Azure analysis failed")
-    time.sleep(2)
-
+        print(f"⏳ Polling Azure... attempt {i}, status: {status}")
+    
+        if status == "succeeded":
+            return result_json  # ✅ Exit immediately
+        elif status == "failed":
+            raise Exception("Azure analysis failed")
+        
+        time.sleep(2)
 
 def parse_and_save(data, name):
     docs = data["analyzeResult"]["documents"]
@@ -169,6 +179,7 @@ def parse_and_save(data, name):
 def run_parser():
     print("🚀 run_parser started")
     files = list_files(drive, FOLDER_ID)
+    failed = []
     for f in files:
         name = f["name"]
         mime = f["mimeType"]
@@ -184,5 +195,10 @@ def run_parser():
             out_path = parse_and_save(parsed, name)
         except Exception as e:
             print(f"❌ Error parsing {name}: {e}")
+            failed.append(name)
             continue
+    # Saved failed list to a temp file
+    with open("outputs/failed_receipts.json", "w") as f:
+        json.dump(failed, f)
+
 

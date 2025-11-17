@@ -22,6 +22,7 @@ def home():
         <form action="/merge" method="get"><button>📥 Download Combined Excel</button></form><br>
         <form action="/outputs" method="get"><button>📂 View Individual Receipt Files</button></form><br>
         <form action="/download-all" method="get"><button>📦 Download All Parsed Receipts (ZIP)</button></form><br>
+        <form action="/failures" method="get"><button>❌ View Failed Files</button></form><br>
         <form action="/cleanup" method="post"><button>🧹 Cleanup Parsed Files</button></form>
     """)
 
@@ -114,6 +115,20 @@ def cleanup_outputs():
         <ul>{''.join(f'<li>{name}</li>' for name in deleted)}</ul>
         <a href="/">⬅️ Back to Dashboard</a>
     """)
+    
+@app.route("/failures")
+def show_failures():
+    path = os.path.join(OUTPUT_DIR, "failed_receipts.json")
+    if not os.path.exists(path):
+        return "<p>No failures recorded.</p><a href='/'>⬅️ Back to Dashboard</a>"
+    with open(path) as f:
+        failed = json.load(f)
+    return render_template_string(f"""
+        <h2>❌ Failed Receipt Files</h2>
+        <ul>{''.join(f'<li>{name}</li>' for name in failed)}</ul>
+        <a href="/">⬅️ Back to Dashboard</a>
+    """)
+    
 @app.route("/debug")
 def debug():
     path = "downloads/test.jpg"
