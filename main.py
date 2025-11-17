@@ -89,9 +89,8 @@ def download_file(drive_service, file_id, filename):
         f.write(fh.getbuffer())
     return local_path
 
-print(f"📥 Downloaded to: {content}")
-print(f"📄 File exists: {os.path.exists(content)}")
-print(f"📦 File size: {os.path.getsize(content) if os.path.exists(content) else 'N/A'}")
+
+
 
 
 def analyze_receipt_dynamic(file_or_bytes, name="receipt"):
@@ -177,6 +176,9 @@ def run_parser():
         if name.endswith(".xlsx") or "_parsed" in name or mime == "application/vnd.google-apps.spreadsheet":
             continue
         content = download_file(drive, f["id"], name)
+        print(f"📥 Downloaded to: {content}")
+        print(f"📄 File exists: {os.path.exists(content)}")
+        print(f"📦 File size: {os.path.getsize(content) if os.path.exists(content) else 'N/A'}")
         try:
             parsed = analyze_receipt_dynamic(content)
             out_path = parse_and_save(parsed, name)
