@@ -122,14 +122,17 @@ def parse_and_save(data, name):
     return out_path
 
 def run_parser():
-    files = list_files(drive, FOLDER_ID)
-    for f in files:
-        name = f["name"]
-        mime = f["mimeType"]
-        if name.endswith(".xlsx") or "_parsed" in name or mime == "application/vnd.google-apps.spreadsheet":
-            continue
-        content = download_file(drive, f["id"], name)
-        parsed = analyze_receipt_dynamic(content)
-        out_path = parse_and_save(parsed, name)
-        if out_path:
-            print(f"✅ Parsed and saved: {out_path}")
+    try:
+        files = list_files(drive, FOLDER_ID)
+        for f in files:
+            name = f["name"]
+            mime = f["mimeType"]
+            if name.endswith(".xlsx") or "_parsed" in name or mime == "application/vnd.google-apps.spreadsheet":
+                continue
+            content = download_file(drive, f["id"], name)
+            parsed = analyze_receipt_dynamic(content)
+            out_path = parse_and_save(parsed, name)
+            if out_path:
+                print(f"✅ Parsed and saved: {out_path}")
+    except Exception as e: 
+        print("Parser crashed:", e)
