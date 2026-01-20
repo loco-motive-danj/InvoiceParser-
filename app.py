@@ -5,14 +5,20 @@ import pandas as pd
 from urllib.parse import quote
 from dotenv import load_dotenv
 from main import run_parser, OUTPUT_DIR
-from werkzeug.utils import secure_filename
-
 
 load_dotenv()
 MERGED_FILE = os.path.join(OUTPUT_DIR, "All_Receipts_Combined.xlsx")
 
 app = Flask(__name__)
 CORS(app)
+
+def find_numeric_column(df):
+    for col in df.columns:
+        if col.lower() in ["quantity", "qty"]:
+            continue
+        if pd.api.types.is_numeric_dtype(df[col]):
+            return col
+    return None
 
 @app.route('/')
 def home():
@@ -22,7 +28,6 @@ def home():
         <form action="/merge" method="get"><button>📥 Download Combined Excel</button></form><br>
         <form action="/outputs" method="get"><button>📂 View Individual Receipt Files</button></form><br>
         <form action="/download-all" method="get"><button>📦 Download All Parsed Receipts (ZIP)</button></form><br>
-        <form action="/failures" method="get"><button>❌ View Failed Files</button></form><br>
         <form action="/cleanup" method="post"><button>🧹 Cleanup Parsed Files</button></form>
     """)
 
@@ -39,7 +44,9 @@ def run_parser_route():
 def list_outputs():
     files = glob.glob(f"{OUTPUT_DIR}/*_parsed.xlsx")
     file_links = [
-        f"<li><a href='/download/{quote(os.path.basename(f))}'>{os.path.basename(f)}</a></li>"
+        f"<li>{os.path.basename(f)} — "
+        f"<a href='/download/{quote(os.path.basename(f))}'>Download</a> | "
+        f"<a href='/view/{quote(os.path.basename(f))}'>View</a></li>"
         for f in files
     ]
     return render_template_string(f"""
@@ -50,8 +57,6 @@ def list_outputs():
 
 @app.route("/download/<filename>")
 def download_output_file(filename):
-    safe_name = secure_filename(filename)
-    path = os.path.join(OUTPUT_DIR, safe_name)
     path = os.path.join(OUTPUT_DIR, filename)
     if os.path.exists(path):
         return send_file(path, as_attachment=True)
@@ -63,16 +68,24 @@ def merge():
     files = glob.glob(f"{OUTPUT_DIR}/*_parsed.xlsx")
     if not files:
         return "No parsed files available yet.", 404
-    try:
-        all_data = [pd.read_excel(f).assign(Source=os.path.basename(f)) for f in files]
-        merged = pd.concat(all_data, ignore_index=True)
-    except Exception as e:
-        return f"❌ Error reading or merging files: {e}", 500
-    from datetime import datetime
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    merged_path = os.path.join(OUTPUT_DIR, f"All_Receipts_{timestamp}.xlsx")
-    merged.to_excel(merged_path, index=False)
-    return send_file(merged_path, as_attachment=True)
+
+    all_data = []
+    for f in files:
+        df = pd.read_excel(f)
+        df["Source"] = os.path.basename(f)
+
+        # Add running total per file
+        num_col = find_numeric_column(df)
+    if num_col:
+        df["Running_Total"] = df[num_col].cumsum()
+
+
+        all_data.append(df)
+
+    merged = pd.concat(all_data, ignore_index=True)
+
+    merged.to_excel(MERGED_FILE, index=False)
+    return send_file(MERGED_FILE, as_attachment=True)
 
 
 
@@ -94,10 +107,31 @@ def download_all_outputs():
         as_attachment=True,
         download_name="All_Receipts.zip"
     )
-@app.route("/status")
-def status():
-    files = glob.glob(f"{OUTPUT_DIR}/*_parsed.xlsx")
-    return jsonify({"parsed_files": len(files)})
+@app.route("/view/<filename>")
+def view_output_file(filename):
+    path = os.path.join(OUTPUT_DIR, filename)
+    if not os.path.exists(path):
+        return f"<p>File {filename} not found.</p>", 404
+
+    df = pd.read_excel(path)
+
+    # Add running total
+    num_col = find_numeric_column(df)
+    if num_col:
+        df["Running_Total"] = df[num_col].cumsum()
+
+
+    table_html = df.to_html(classes="table table-striped", index=False)
+    print(df.dtypes)
+
+
+    return render_template_string(f"""
+        <h2>📄 Viewing: {filename}</h2>
+        {table_html}
+        <br><br>
+        <a href="/outputs">⬅️ Back to Files</a>
+    """)
+
 
 @app.route('/cleanup', methods=['POST'])
 def cleanup_outputs():
@@ -115,28 +149,6 @@ def cleanup_outputs():
         <ul>{''.join(f'<li>{name}</li>' for name in deleted)}</ul>
         <a href="/">⬅️ Back to Dashboard</a>
     """)
-    
-@app.route("/failures")
-def show_failures():
-    path = os.path.join(OUTPUT_DIR, "failed_receipts.json")
-    if not os.path.exists(path):
-        return "<p>No failures recorded.</p><a href='/'>⬅️ Back to Dashboard</a>"
-    with open(path) as f:
-        failed = json.load(f)
-    return render_template_string(f"""
-        <h2>❌ Failed Receipt Files</h2>
-        <ul>{''.join(f'<li>{name}</li>' for name in failed)}</ul>
-        <a href="/">⬅️ Back to Dashboard</a>
-    """)
-    
-@app.route("/debug")
-def debug():
-    path = "downloads/test.jpg"
-    with open(path, "rb") as f:
-        content = f.read()
-    print(f"📦 Test file size: {len(content)}")
-    print(f"📄 First bytes: {content[:10]}")
-    return "Debug complete"
 
 
 if __name__ == "__main__":
