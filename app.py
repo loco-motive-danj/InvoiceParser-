@@ -14,6 +14,14 @@ MERGED_FILE = os.path.join(OUTPUT_DIR, "All_Receipts_Combined.xlsx")
 app = Flask(__name__)
 CORS(app)
 
+def find_numeric_column(df):
+    for col in df.columns:
+        if col.lower() in ["quantity", "qty"]:
+            continue
+        if pd.api.types.is_numeric_dtype(df[col]):
+            return col
+    return None
+
 @app.route('/')
 def home():
     return render_template_string("""
@@ -38,7 +46,9 @@ def run_parser_route():
 def list_outputs():
     files = glob.glob(f"{OUTPUT_DIR}/*_parsed.xlsx")
     file_links = [
-        f"<li><a href='/download/{quote(os.path.basename(f))}'>{os.path.basename(f)}</a></li>"
+        f"<li>{os.path.basename(f)} — "
+        f"<a href='/download/{quote(os.path.basename(f))}'>Download</a> | "
+        f"<a href='/view/{quote(os.path.basename(f))}'>View</a></li>"
         for f in files
     ]
     return render_template_string(f"""
@@ -60,10 +70,25 @@ def merge():
     files = glob.glob(f"{OUTPUT_DIR}/*_parsed.xlsx")
     if not files:
         return "No parsed files available yet.", 404
-    all_data = [pd.read_excel(f).assign(Source=os.path.basename(f)) for f in files]
+
+    all_data = []
+    for f in files:
+        df = pd.read_excel(f)
+        df["Source"] = os.path.basename(f)
+
+        # Add running total per file
+        num_col = find_numeric_column(df)
+    if num_col:
+        df["Running_Total"] = df[num_col].cumsum()
+
+
+        all_data.append(df)
+
     merged = pd.concat(all_data, ignore_index=True)
+
     merged.to_excel(MERGED_FILE, index=False)
     return send_file(MERGED_FILE, as_attachment=True)
+
 
 
 @app.route('/download-all')
@@ -84,6 +109,32 @@ def download_all_outputs():
         as_attachment=True,
         download_name="All_Receipts.zip"
     )
+@app.route("/view/<filename>")
+def view_output_file(filename):
+    path = os.path.join(OUTPUT_DIR, filename)
+    if not os.path.exists(path):
+        return f"<p>File {filename} not found.</p>", 404
+
+    df = pd.read_excel(path)
+
+    # Add running total
+    num_col = find_numeric_column(df)
+    if num_col:
+        df["Running_Total"] = df[num_col].cumsum()
+
+
+    table_html = df.to_html(classes="table table-striped", index=False)
+    print(df.dtypes)
+
+
+    return render_template_string(f"""
+        <h2>📄 Viewing: {filename}</h2>
+        {table_html}
+        <br><br>
+        <a href="/outputs">⬅️ Back to Files</a>
+    """)
+
+
 @app.route('/cleanup', methods=['POST'])
 def cleanup_outputs():
     files = glob.glob(f"{OUTPUT_DIR}/*_parsed.xlsx")
